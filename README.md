@@ -411,6 +411,9 @@ If it's missing, install the GStreamer "bad" plugin set and restart SONE — `gs
 **Playback errors in exclusive/bit-perfect mode?**
 SONE automatically detects your DAC's supported formats and sample rates, but if playback still fails, your hardware may not support the source format at all. Try a lower quality tier or switch to normal output mode.
 
+**Loved Tracks shows fewer tracks than expected?**
+TIDAL can report more favorites than it returns. On desktop, SONE uses the tracks TIDAL actually returns and updates the count once it reaches the end of the list.
+
 **Gamepad d-pad does nothing or the triggers act wrong in TV mode?**
 A controller missing from libmanette's built-in layouts gets a fallback layout with no d-pad and the triggers on the wrong axes. libmanette 0.2.7 (Ubuntu 24.04) has no DualSense layout, for one. Add the controller's `platform:Linux` lines from the [SDL controller database](https://github.com/mdqinc/SDL_GameControllerDB) to `~/.config/libmanette/gamecontrollerdb` and reconnect it.
 

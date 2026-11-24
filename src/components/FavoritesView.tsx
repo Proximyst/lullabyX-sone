@@ -26,7 +26,12 @@ import {
   videoToTrack,
 } from "../utils/itemHelpers";
 import { favoriteTrackIdsAtom, trackSortPrefsAtom } from "../atoms/favorites";
-import { type Track, type TidalVideo, type MediaItemType } from "../types";
+import {
+  type Track,
+  type TidalVideo,
+  type MediaItemType,
+  type PaginatedTracks,
+} from "../types";
 import TrackList from "./TrackList";
 import MediaGrid from "./MediaGrid";
 import MediaCard from "./MediaCard";
@@ -76,7 +81,10 @@ export default function FavoritesView({ onBack }: FavoritesViewProps) {
   const [tab, setTab] = useViewTab<FavoritesTab>("tracks", FAVORITES_TABS);
 
   const [allTracks, setAllTracks] = useState<Track[]>([]);
-  const [totalTracks, setTotalTracks] = useState(0);
+  // TIDAL's total is only an estimate until pagination is exhausted.
+  const [reportedTrackTotal, setReportedTrackTotal] = useState<number | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,11 +165,14 @@ export default function FavoritesView({ onBack }: FavoritesViewProps) {
         if (generationRef.current !== gen) return;
 
         setAllTracks(firstPage.items);
-        setTotalTracks(firstPage.totalNumberOfItems);
+        hasMoreRef.current =
+          firstPage.items.length > 0 &&
+          firstPage.items.length < firstPage.totalNumberOfItems;
+        setReportedTrackTotal(
+          hasMoreRef.current ? firstPage.totalNumberOfItems : null,
+        );
         offsetRef.current = firstPage.items.length;
         rawTracksRef.current = firstPage.items;
-        hasMoreRef.current =
-          firstPage.items.length < firstPage.totalNumberOfItems;
       } catch (err: any) {
         if (generationRef.current !== gen) return;
         console.error("Failed to load favorites:", err);
@@ -287,6 +298,23 @@ export default function FavoritesView({ onBack }: FavoritesViewProps) {
     }
   }, [loadingMoreVideos, authTokens?.user_id]);
 
+  const appendTrackPage = useCallback((page: PaginatedTracks) => {
+    const { items, totalNumberOfItems } = page;
+    offsetRef.current += items.length;
+    // TIDAL can return an empty page even when its total says more remain.
+    // Keep fetching short nonempty pages, but never retry a non-advancing offset.
+    hasMoreRef.current =
+      items.length > 0 && offsetRef.current < totalNumberOfItems;
+    setReportedTrackTotal(hasMoreRef.current ? totalNumberOfItems : null);
+    if (items.length === 0) return;
+
+    rawTracksRef.current = [...rawTracksRef.current, ...items];
+    setAllTracks((prev) => {
+      const seen = new Set(prev.map((t) => t.id));
+      return [...prev, ...items.filter((t) => !seen.has(t.id))];
+    });
+  }, []);
+
   // Fetch all remaining pages in the background, appending to state as they arrive
   const fetchRemaining = useCallback(async () => {
     if (bgFetchingRef.current || !hasMoreRef.current) return;
@@ -305,27 +333,16 @@ export default function FavoritesView({ onBack }: FavoritesViewProps) {
           sortDirection ?? "DESC",
         );
         if (generationRef.current !== gen) return;
-
-        const newItems = page.items;
-        startTransition(() => {
-          setAllTracks((prev) => {
-            const seen = new Set(prev.map((t) => t.id));
-            return [...prev, ...newItems.filter((t) => !seen.has(t.id))];
-          });
-          setTotalTracks(page.totalNumberOfItems);
-        });
-        offsetRef.current += newItems.length;
-        rawTracksRef.current = [...rawTracksRef.current, ...newItems];
-        hasMoreRef.current = offsetRef.current < page.totalNumberOfItems;
+        startTransition(() => appendTrackPage(page));
       }
     } catch (err) {
       console.error("Failed to background-fetch favorites:", err);
     } finally {
       bgFetchingRef.current = false;
     }
-  }, [authTokens?.user_id, sortColumn, sortDirection]);
+  }, [authTokens?.user_id, sortColumn, sortDirection, appendTrackPage]);
 
-  // Manual load-more (infinite scroll trigger) — also kicks off full background fetch
+  // Fetch one page for infinite scroll or scroll restoration.
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMoreRef.current) return;
     if (bgFetchingRef.current) return; // background fetch already running
@@ -343,22 +360,22 @@ export default function FavoritesView({ onBack }: FavoritesViewProps) {
         sortDirection ?? "DESC",
       );
       if (generationRef.current !== gen) return;
-      setAllTracks((prev) => {
-        const seen = new Set(prev.map((t) => t.id));
-        return [...prev, ...page.items.filter((t) => !seen.has(t.id))];
-      });
-      setTotalTracks(page.totalNumberOfItems);
-      offsetRef.current += page.items.length;
-      rawTracksRef.current = [...rawTracksRef.current, ...page.items];
-      hasMoreRef.current = offsetRef.current < page.totalNumberOfItems;
+      appendTrackPage(page);
     } catch (err) {
       console.error("Failed to load more favorites:", err);
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, authTokens?.user_id, sortColumn, sortDirection]);
+  }, [
+    loadingMore,
+    authTokens?.user_id,
+    sortColumn,
+    sortDirection,
+    appendTrackPage,
+  ]);
 
-  const hasMore = allTracks.length < totalTracks;
+  const hasMore = reportedTrackTotal !== null;
+  const totalTracks = reportedTrackTotal ?? allTracks.length;
 
   // Filter out unfavorited tracks in real-time
   const tracks = useMemo(

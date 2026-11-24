@@ -75,6 +75,17 @@ describe("pagers", () => {
     expect(page.hasMore).toBe(true);
   });
 
+  it("favorites pager stops at an empty page despite an inflated total", async () => {
+    vi.mocked(api.getFavoriteTracks).mockResolvedValue({
+      items: [],
+      totalNumberOfItems: 82,
+      offset: 7,
+      limit: FAVORITE_TRACKS_PAGE_SIZE,
+    });
+    const page = await favoriteTracksPager(3, "DATE", "DESC")(7);
+    expect(page).toEqual({ items: [], hasMore: false });
+  });
+
   it("video pager maps videos to tracks; a short page ends it", async () => {
     vi.mocked(api.getFavoriteVideos).mockResolvedValue([
       { id: 9, title: "V" } as never,

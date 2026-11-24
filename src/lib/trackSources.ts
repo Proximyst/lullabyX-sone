@@ -77,7 +77,9 @@ export const favoriteTracksPager =
     );
     return {
       items: page.items,
-      hasMore: offset + page.items.length < page.totalNumberOfItems,
+      hasMore:
+        page.items.length > 0 &&
+        offset + page.items.length < page.totalNumberOfItems,
     };
   };
 
